@@ -2,6 +2,26 @@
 
 All notable changes to this project will be documented in this file.
 
+## Unreleased (2026-04-22)
+
+### Chores
+
+- **deps:** bump alpine (#1) ([#1](https://github.com/somaz94/go-docker-action-ci-action/pull/1)) ([f0df729](https://github.com/somaz94/go-docker-action-ci-action/commit/f0df729edbfb6ddb7804d87472cfd59140ddc4b3))
+
+<br/>
+
+## [v1.0.1](https://github.com/somaz94/go-docker-action-ci-action/compare/v1.0.0...v1.0.1) (2026-04-22)
+
+### Bug Fixes
+
+- trim description to marketplace 125-char limit and point docker dependabot at fixture ([834e0df](https://github.com/somaz94/go-docker-action-ci-action/commit/834e0df9e178dc4394481015fb055bf3b3a31a6e))
+
+### Contributors
+
+- somaz
+
+<br/>
+
 ## [v1.0.0](https://github.com/somaz94/go-docker-action-ci-action/releases/tag/v1.0.0) (2026-04-22)
 
 ### Features
