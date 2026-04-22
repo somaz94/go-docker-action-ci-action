@@ -1,9 +1,5 @@
 name: Go Docker CI Action
-description: >-
-  Run Go unit tests and build + push a Docker image to a local registry in one
-  composite action. Targets the shared CI prelude used by somaz94 Go-based
-  Docker actions (env-output-setter, contributors-action, go-changelog-action,
-  go-git-commit-action, major-tag-action, template-go-action).
+description: Run Go unit tests and build + push a Docker image to a local registry in one composite action.
 author: somaz94
 
 branding:
