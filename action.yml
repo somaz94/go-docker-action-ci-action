@@ -48,7 +48,7 @@ inputs:
     required: false
     default: ''
   image_tag:
-    description: "Tag appended to the pushed image reference (e.g., 'latest', 'sha-abc123', '${{ github.sha }}'). Applied verbatim — must be a valid Docker tag."
+    description: "Tag appended to the pushed image reference (e.g., 'latest', 'sha-abc123', or any valid Docker tag). Applied verbatim — must match Docker's tag format."
     required: false
     default: 'latest'
   dockerfile:
