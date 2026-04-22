@@ -1,0 +1,245 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - '**/*.md'
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+
+      - name: Install linters
+        run: |
+          python -m pip install --upgrade pip
+          pip install yamllint
+
+      - name: Run yamllint
+        run: yamllint -d relaxed action.yml .github/workflows/ tests/
+
+      - name: Run actionlint
+        uses: raven-actions/actionlint@v2
+        with:
+          cache: true
+
+  test-action:
+    name: Test Action (defaults)
+    runs-on: ubuntu-latest
+    needs: lint
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Run action with default inputs against fixture
+        id: ci
+        uses: ./
+        with:
+          working_directory: tests/fixtures/sample_action
+          build_context: tests/fixtures/sample_action
+
+      - name: Verify outputs
+        run: |
+          REPO_NAME="${GITHUB_REPOSITORY##*/}"
+          EXPECTED="localhost:5001/actions/${REPO_NAME}:latest"
+          IMAGE='${{ steps.ci.outputs.image_ref }}'
+          DIGEST='${{ steps.ci.outputs.image_digest }}'
+          EXIT='${{ steps.ci.outputs.test_exit_code }}'
+          echo "image_ref=${IMAGE}"
+          echo "image_digest=${DIGEST}"
+          echo "test_exit_code=${EXIT}"
+          if [[ "${IMAGE}" != "${EXPECTED}" ]]; then
+            echo "::error::expected image_ref='${EXPECTED}', got '${IMAGE}'"
+            exit 1
+          fi
+          if [[ "${EXIT}" != "0" ]]; then
+            echo "::error::expected test_exit_code='0', got '${EXIT}'"
+            exit 1
+          fi
+          if [[ -z "${DIGEST}" || "${DIGEST}" != sha256:* ]]; then
+            echo "::error::expected image_digest to start with 'sha256:', got '${DIGEST}'"
+            exit 1
+          fi
+          echo "[PASS] defaults"
+
+  test-action-notest:
+    name: Test Action (run_unit_tests=false + custom image_name + image_tag + registry_port)
+    runs-on: ubuntu-latest
+    needs: lint
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Run action with tests skipped and custom tag
+        id: ci
+        uses: ./
+        with:
+          working_directory: tests/fixtures/sample_action
+          build_context: tests/fixtures/sample_action
+          run_unit_tests: 'false'
+          image_name: sample-action
+          image_tag: sha-${{ github.sha }}
+          registry_port: '5050'
+
+      - name: Verify outputs
+        run: |
+          EXPECTED="localhost:5050/actions/sample-action:sha-${GITHUB_SHA}"
+          IMAGE='${{ steps.ci.outputs.image_ref }}'
+          EXIT='${{ steps.ci.outputs.test_exit_code }}'
+          echo "image_ref=${IMAGE}"
+          echo "test_exit_code='${EXIT}'"
+          if [[ "${IMAGE}" != "${EXPECTED}" ]]; then
+            echo "::error::expected image_ref='${EXPECTED}', got '${IMAGE}'"
+            exit 1
+          fi
+          if [[ -n "${EXIT}" ]]; then
+            echo "::error::expected test_exit_code to be empty when run_unit_tests=false, got '${EXIT}'"
+            exit 1
+          fi
+          echo "[PASS] notest + custom image_tag"
+
+  test-action-external-registry:
+    name: Test Action (manage_registry=false + caller services.registry + coverage + build_args)
+    runs-on: ubuntu-latest
+    needs: lint
+    services:
+      registry:
+        image: registry:2
+        ports:
+          - 5001:5000
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Run action with caller-managed registry, coverage threshold, and build args
+        id: ci
+        uses: ./
+        with:
+          working_directory: tests/fixtures/sample_action
+          build_context: tests/fixtures/sample_action
+          manage_registry: 'false'
+          coverage_threshold: '50'
+          build_args: |
+            FIXTURE_BUILD_ARG=ci-smoke
+
+      - name: Verify outputs
+        run: |
+          REPO_NAME="${GITHUB_REPOSITORY##*/}"
+          EXPECTED="localhost:5001/actions/${REPO_NAME}:latest"
+          IMAGE='${{ steps.ci.outputs.image_ref }}'
+          DIGEST='${{ steps.ci.outputs.image_digest }}'
+          EXIT='${{ steps.ci.outputs.test_exit_code }}'
+          echo "image_ref=${IMAGE}"
+          echo "image_digest=${DIGEST}"
+          echo "test_exit_code=${EXIT}"
+          if [[ "${IMAGE}" != "${EXPECTED}" ]]; then
+            echo "::error::expected image_ref='${EXPECTED}', got '${IMAGE}'"
+            exit 1
+          fi
+          if [[ "${EXIT}" != "0" ]]; then
+            echo "::error::expected test_exit_code='0', got '${EXIT}'"
+            exit 1
+          fi
+          if [[ -z "${DIGEST}" || "${DIGEST}" != sha256:* ]]; then
+            echo "::error::expected image_digest to start with 'sha256:', got '${DIGEST}'"
+            exit 1
+          fi
+          echo "[PASS] external-registry"
+
+      - name: Pull pinned by digest and verify build_args landed as a label
+        run: |
+          set -euo pipefail
+          REPO_NAME="${GITHUB_REPOSITORY##*/}"
+          DIGEST='${{ steps.ci.outputs.image_digest }}'
+          docker pull "localhost:5001/actions/${REPO_NAME}:latest"
+          docker pull "localhost:5001/actions/${REPO_NAME}@${DIGEST}"
+          LABEL=$(docker image inspect "localhost:5001/actions/${REPO_NAME}@${DIGEST}" --format '{{ index .Config.Labels "fixture.build_arg" }}')
+          echo "fixture.build_arg=${LABEL}"
+          if [[ "${LABEL}" != "ci-smoke" ]]; then
+            echo "::error::expected fixture.build_arg='ci-smoke' (from build_args passthrough), got '${LABEL}'"
+            exit 1
+          fi
+
+  test-action-failure:
+    name: Test Action (failure path — Dockerfile RUN false)
+    runs-on: ubuntu-latest
+    needs: lint
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Run action against a Dockerfile that fails
+        id: ci
+        uses: ./
+        continue-on-error: true
+        with:
+          working_directory: tests/fixtures/sample_action
+          build_context: tests/fixtures/sample_action
+          dockerfile: Dockerfile.fail
+          run_unit_tests: 'false'
+          image_name: sample-action-fail
+          registry_port: '5070'
+
+      - name: Assert action failed
+        run: |
+          OUTCOME='${{ steps.ci.outcome }}'
+          echo "outcome=${OUTCOME}"
+          if [[ "${OUTCOME}" != "failure" ]]; then
+            echo "::error::expected outcome='failure', got '${OUTCOME}'"
+            exit 1
+          fi
+          echo "[PASS] failure"
+
+      - name: Confirm registry was cleaned up
+        run: |
+          if docker ps --filter "name=^go-docker-ci-action-registry$" --format '{{.Names}}' | grep -qx go-docker-ci-action-registry; then
+            echo "::error::registry container was not cleaned up on failure"
+            docker ps
+            exit 1
+          fi
+          echo "[PASS] registry cleanup ran even on failure"
+
+  ci-result:
+    name: CI Result
+    if: always()
+    needs:
+      - lint
+      - test-action
+      - test-action-notest
+      - test-action-external-registry
+      - test-action-failure
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check results
+        run: |
+          if [[ "${{ needs.lint.result }}" != "success" ]]; then
+            echo "::error::lint failed"
+            exit 1
+          fi
+          if [[ "${{ needs.test-action.result }}" != "success" ]]; then
+            echo "::error::test-action failed"
+            exit 1
+          fi
+          if [[ "${{ needs.test-action-notest.result }}" != "success" ]]; then
+            echo "::error::test-action-notest failed"
+            exit 1
+          fi
+          if [[ "${{ needs.test-action-external-registry.result }}" != "success" ]]; then
+            echo "::error::test-action-external-registry failed"
+            exit 1
+          fi
+          if [[ "${{ needs.test-action-failure.result }}" != "success" ]]; then
+            echo "::error::test-action-failure failed"
+            exit 1
+          fi
+          echo "All CI jobs passed"

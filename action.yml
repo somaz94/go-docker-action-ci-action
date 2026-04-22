@@ -1,0 +1,337 @@
+name: Go Docker CI Action
+description: >-
+  Run Go unit tests and build + push a Docker image to a local registry in one
+  composite action. Targets the shared CI prelude used by somaz94 Go-based
+  Docker actions (env-output-setter, contributors-action, go-changelog-action,
+  go-git-commit-action, major-tag-action, template-go-action).
+author: somaz94
+
+branding:
+  icon: package
+  color: blue
+
+inputs:
+  go_version_file:
+    description: "Path to go.mod (or another file) used by actions/setup-go as 'go-version-file'. Ignored when 'go_version' is set."
+    required: false
+    default: 'go.mod'
+  go_version:
+    description: "Explicit Go version (e.g., '1.26'). Takes precedence over 'go_version_file' when non-empty."
+    required: false
+    default: ''
+  cache:
+    description: "Enable Go module/build cache in actions/setup-go."
+    required: false
+    default: 'true'
+  cache_dependency_path:
+    description: "Passthrough to actions/setup-go 'cache-dependency-path'. Leave empty to rely on setup-go's default (go.sum next to go.mod). Handy for mono-repos where go.sum lives elsewhere."
+    required: false
+    default: ''
+  working_directory:
+    description: "Directory to run unit tests and build context resolution from (Go module root)."
+    required: false
+    default: '.'
+  run_unit_tests:
+    description: "When 'true' (default), run 'test_command' before the Docker build. Set 'false' to skip the test phase entirely (outputs.test_exit_code will be empty)."
+    required: false
+    default: 'true'
+  test_command:
+    description: "Shell command executed from 'working_directory' for unit tests. Must produce 'coverage.out' (via '-coverprofile=coverage.out') when 'coverage_threshold' is non-empty."
+    required: false
+    default: 'go test ./... -v -cover -coverprofile=coverage.out'
+  coverage_threshold:
+    description: "Minimum total coverage percent (e.g., '80'). Leave empty to skip the threshold check. Requires 'test_command' to emit 'coverage.out'."
+    required: false
+    default: ''
+  image_name:
+    description: "Image name used in the final tag 'localhost:<registry_port>/actions/<image_name>:<image_tag>'. Leave empty to derive from the current repository name."
+    required: false
+    default: ''
+  image_tag:
+    description: "Tag appended to the pushed image reference (e.g., 'latest', 'sha-abc123', '${{ github.sha }}'). Applied verbatim — must be a valid Docker tag."
+    required: false
+    default: 'latest'
+  dockerfile:
+    description: "Path to the Dockerfile, relative to 'build_context'."
+    required: false
+    default: 'Dockerfile'
+  build_context:
+    description: "Build context passed to docker/build-push-action."
+    required: false
+    default: '.'
+  build_args:
+    description: "Multi-line list of build-time variables passed through to docker/build-push-action's 'build-args' (one 'KEY=VALUE' per line). Leave empty to pass no build args."
+    required: false
+    default: ''
+  registry_port:
+    description: "Host port exposed by the local registry:2 container. The pushed image is tagged 'localhost:<port>/actions/<image_name>:latest'."
+    required: false
+    default: '5001'
+  manage_registry:
+    description: "When 'true' (default), run a local 'registry:2' container from the action and stop it after the build. Set 'false' to rely on a caller-managed services:registry on the same port."
+    required: false
+    default: 'true'
+
+outputs:
+  image_ref:
+    description: "Full image reference that was built and pushed (e.g., 'localhost:5001/actions/my-action:latest')."
+    value: ${{ steps.meta.outputs.image_ref }}
+  image_digest:
+    description: "Image digest (sha256:...) produced by docker/build-push-action. Use to pin downstream pulls to an immutable reference."
+    value: ${{ steps.build.outputs.digest }}
+  test_exit_code:
+    description: "Exit code of the unit test command. '0' when tests passed. Empty when 'run_unit_tests' is 'false'."
+    value: ${{ steps.unit_tests.outputs.test_exit_code }}
+
+runs:
+  using: composite
+  steps:
+    - name: Validate inputs
+      shell: bash
+      env:
+        GO_VERSION: ${{ inputs.go_version }}
+        GO_VERSION_FILE: ${{ inputs.go_version_file }}
+        WORKING_DIRECTORY: ${{ inputs.working_directory }}
+        RUN_UNIT_TESTS: ${{ inputs.run_unit_tests }}
+        TEST_COMMAND: ${{ inputs.test_command }}
+        COVERAGE_THRESHOLD: ${{ inputs.coverage_threshold }}
+        DOCKERFILE: ${{ inputs.dockerfile }}
+        BUILD_CONTEXT: ${{ inputs.build_context }}
+        IMAGE_TAG: ${{ inputs.image_tag }}
+        REGISTRY_PORT: ${{ inputs.registry_port }}
+        MANAGE_REGISTRY: ${{ inputs.manage_registry }}
+      run: |
+        set -euo pipefail
+        echo "::group::Validate inputs"
+
+        if [[ -z "${GO_VERSION// }" && -z "${GO_VERSION_FILE// }" ]]; then
+          echo "::error::either 'go_version' or 'go_version_file' must be set"
+          exit 1
+        fi
+
+        if [[ ! -d "$WORKING_DIRECTORY" ]]; then
+          echo "::error::working_directory '$WORKING_DIRECTORY' is not a directory"
+          exit 1
+        fi
+
+        if [[ ! -d "$BUILD_CONTEXT" ]]; then
+          echo "::error::build_context '$BUILD_CONTEXT' is not a directory"
+          exit 1
+        fi
+
+        if [[ ! -f "$BUILD_CONTEXT/$DOCKERFILE" ]]; then
+          echo "::error::dockerfile '$BUILD_CONTEXT/$DOCKERFILE' not found"
+          exit 1
+        fi
+
+        if [[ "$RUN_UNIT_TESTS" == "true" && -z "${TEST_COMMAND// }" ]]; then
+          echo "::error::'test_command' must not be empty when 'run_unit_tests' is true"
+          exit 1
+        fi
+
+        if [[ -n "${COVERAGE_THRESHOLD// }" ]]; then
+          if ! [[ "$COVERAGE_THRESHOLD" =~ ^[0-9]+(\.[0-9]+)?$ ]]; then
+            echo "::error::'coverage_threshold' must be numeric (e.g., '80'), got '$COVERAGE_THRESHOLD'"
+            exit 1
+          fi
+          if [[ "$RUN_UNIT_TESTS" != "true" ]]; then
+            echo "::warning::'coverage_threshold' is set but 'run_unit_tests' is false — threshold check will be skipped"
+          fi
+        fi
+
+        if ! [[ "$REGISTRY_PORT" =~ ^[0-9]+$ ]]; then
+          echo "::error::'registry_port' must be a positive integer, got '$REGISTRY_PORT'"
+          exit 1
+        fi
+
+        if [[ -z "${IMAGE_TAG// }" ]]; then
+          echo "::error::'image_tag' must not be empty"
+          exit 1
+        fi
+        if ! [[ "$IMAGE_TAG" =~ ^[a-zA-Z0-9_][a-zA-Z0-9._-]{0,127}$ ]]; then
+          echo "::error::'image_tag' is not a valid Docker tag (alphanumeric, '_', '.', '-', up to 128 chars; must not start with '.' or '-'), got '$IMAGE_TAG'"
+          exit 1
+        fi
+
+        if [[ -n "${GO_VERSION// }" ]]; then
+          echo "go_version=$GO_VERSION (explicit)"
+        else
+          echo "go_version_file=$GO_VERSION_FILE"
+          if [[ ! -f "$WORKING_DIRECTORY/$GO_VERSION_FILE" ]]; then
+            echo "::warning::go_version_file '$WORKING_DIRECTORY/$GO_VERSION_FILE' not found; actions/setup-go may fail"
+          fi
+        fi
+        echo "working_directory=$WORKING_DIRECTORY"
+        echo "run_unit_tests=$RUN_UNIT_TESTS"
+        echo "coverage_threshold=${COVERAGE_THRESHOLD:-<skip>}"
+        echo "dockerfile=$BUILD_CONTEXT/$DOCKERFILE"
+        echo "image_tag=$IMAGE_TAG"
+        echo "registry_port=$REGISTRY_PORT"
+        echo "manage_registry=$MANAGE_REGISTRY"
+        echo "::endgroup::"
+
+    - name: Set up Go (from file)
+      if: inputs.go_version == ''
+      uses: actions/setup-go@v6
+      with:
+        go-version-file: ${{ inputs.working_directory == '.' && inputs.go_version_file || format('{0}/{1}', inputs.working_directory, inputs.go_version_file) }}
+        cache: ${{ inputs.cache }}
+        cache-dependency-path: ${{ inputs.cache_dependency_path }}
+
+    - name: Set up Go (explicit)
+      if: inputs.go_version != ''
+      uses: actions/setup-go@v6
+      with:
+        go-version: ${{ inputs.go_version }}
+        cache: ${{ inputs.cache }}
+        cache-dependency-path: ${{ inputs.cache_dependency_path }}
+
+    - name: Resolve image metadata
+      id: meta
+      shell: bash
+      env:
+        IMAGE_NAME: ${{ inputs.image_name }}
+        IMAGE_TAG: ${{ inputs.image_tag }}
+        REGISTRY_PORT: ${{ inputs.registry_port }}
+      run: |
+        set -euo pipefail
+        if [[ -z "${IMAGE_NAME// }" ]]; then
+          IMAGE_NAME="${GITHUB_REPOSITORY##*/}"
+        fi
+        IMAGE_REF="localhost:${REGISTRY_PORT}/actions/${IMAGE_NAME}:${IMAGE_TAG}"
+        echo "image_name=$IMAGE_NAME" >> "$GITHUB_OUTPUT"
+        echo "image_ref=$IMAGE_REF" >> "$GITHUB_OUTPUT"
+        echo "resolved image_ref=$IMAGE_REF"
+
+    - name: Run unit tests
+      id: unit_tests
+      if: inputs.run_unit_tests == 'true'
+      shell: bash
+      working-directory: ${{ inputs.working_directory }}
+      env:
+        TEST_COMMAND: ${{ inputs.test_command }}
+        COVERAGE_THRESHOLD: ${{ inputs.coverage_threshold }}
+      run: |
+        set -euo pipefail
+        echo "::group::Unit tests: $TEST_COMMAND"
+        bash -c "$TEST_COMMAND"
+        echo "test_exit_code=0" >> "$GITHUB_OUTPUT"
+        echo "::endgroup::"
+
+        if [[ -n "${COVERAGE_THRESHOLD// }" ]]; then
+          echo "::group::Coverage threshold check (>= ${COVERAGE_THRESHOLD}%)"
+          if [[ ! -f coverage.out ]]; then
+            echo "::error::coverage_threshold requested but 'coverage.out' was not produced by 'test_command'"
+            exit 1
+          fi
+          go tool cover -func=coverage.out
+          COVERAGE=$(go tool cover -func=coverage.out | awk '/^total:/ {gsub("%","",$3); print $3}')
+          if [[ -z "$COVERAGE" ]]; then
+            echo "::error::could not parse total coverage from 'go tool cover -func'"
+            exit 1
+          fi
+          echo "Total coverage: ${COVERAGE}%"
+          if awk -v cov="$COVERAGE" -v thr="$COVERAGE_THRESHOLD" 'BEGIN {exit (cov + 0 >= thr + 0) ? 0 : 1}'; then
+            echo "PASS: coverage ${COVERAGE}% >= ${COVERAGE_THRESHOLD}%"
+          else
+            echo "::error::coverage ${COVERAGE}% is below threshold ${COVERAGE_THRESHOLD}%"
+            exit 1
+          fi
+          echo "::endgroup::"
+        fi
+
+    - name: Start local registry
+      id: registry
+      if: inputs.manage_registry == 'true'
+      shell: bash
+      env:
+        REGISTRY_PORT: ${{ inputs.registry_port }}
+      run: |
+        set -euo pipefail
+        echo "::group::Start local registry (registry:2 on :$REGISTRY_PORT)"
+        NAME="go-docker-ci-action-registry"
+        if docker ps --filter "name=^${NAME}$" --format '{{.Names}}' | grep -qx "$NAME"; then
+          echo "::notice::registry '$NAME' already running — reusing"
+        else
+          docker run -d --rm -p "${REGISTRY_PORT}:5000" --name "$NAME" registry:2 >/dev/null
+        fi
+        echo "name=$NAME" >> "$GITHUB_OUTPUT"
+        for i in $(seq 1 15); do
+          if curl -sfo /dev/null "http://localhost:${REGISTRY_PORT}/v2/"; then
+            echo "registry ready after ${i}s"
+            break
+          fi
+          if [[ "$i" == "15" ]]; then
+            echo "::error::registry did not become ready on :${REGISTRY_PORT} after 15s"
+            docker logs "$NAME" || true
+            exit 1
+          fi
+          sleep 1
+        done
+        echo "::endgroup::"
+
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v4
+      with:
+        install: true
+        driver-opts: network=host
+
+    - name: Configure Git Safe Directory
+      shell: bash
+      run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+
+    - name: Build and push image
+      id: build
+      uses: docker/build-push-action@v7
+      with:
+        context: ${{ inputs.build_context }}
+        file: ${{ format('{0}/{1}', inputs.build_context, inputs.dockerfile) }}
+        push: true
+        tags: ${{ steps.meta.outputs.image_ref }}
+        build-args: ${{ inputs.build_args }}
+
+    - name: Stop local registry
+      if: always() && inputs.manage_registry == 'true' && steps.registry.outputs.name != ''
+      shell: bash
+      env:
+        REGISTRY_NAME: ${{ steps.registry.outputs.name }}
+      run: |
+        echo "::group::Stop local registry ($REGISTRY_NAME)"
+        docker stop "$REGISTRY_NAME" >/dev/null 2>&1 || true
+        echo "::endgroup::"
+
+    - name: Summary
+      if: always()
+      shell: bash
+      env:
+        IMAGE_REF: ${{ steps.meta.outputs.image_ref }}
+        IMAGE_DIGEST: ${{ steps.build.outputs.digest }}
+        WORKING_DIRECTORY: ${{ inputs.working_directory }}
+        RUN_UNIT_TESTS: ${{ inputs.run_unit_tests }}
+        COVERAGE_THRESHOLD: ${{ inputs.coverage_threshold }}
+        MANAGE_REGISTRY: ${{ inputs.manage_registry }}
+        REGISTRY_PORT: ${{ inputs.registry_port }}
+        DOCKERFILE: ${{ inputs.dockerfile }}
+        BUILD_CONTEXT: ${{ inputs.build_context }}
+      run: |
+        set -euo pipefail
+        if [[ -z "${GITHUB_STEP_SUMMARY:-}" ]]; then
+          exit 0
+        fi
+        {
+          echo "### Go Docker CI"
+          echo ""
+          echo "| Field | Value |"
+          echo "|-------|-------|"
+          echo "| Working directory | \`${WORKING_DIRECTORY}\` |"
+          echo "| Unit tests | \`${RUN_UNIT_TESTS}\` |"
+          if [[ -n "${COVERAGE_THRESHOLD// }" ]]; then
+            echo "| Coverage threshold | \`${COVERAGE_THRESHOLD}%\` |"
+          fi
+          echo "| Dockerfile | \`${BUILD_CONTEXT}/${DOCKERFILE}\` |"
+          echo "| Manage registry | \`${MANAGE_REGISTRY}\` (port \`${REGISTRY_PORT}\`) |"
+          echo "| Image ref | \`${IMAGE_REF}\` |"
+          if [[ -n "${IMAGE_DIGEST:-}" ]]; then
+            echo "| Image digest | \`${IMAGE_DIGEST}\` |"
+          fi
+        } >> "$GITHUB_STEP_SUMMARY"

@@ -1,0 +1,3 @@
+FROM alpine:3.20
+# Intentional failure fixture used to assert the action fails when the Docker build fails.
+RUN false

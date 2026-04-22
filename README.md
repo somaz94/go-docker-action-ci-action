@@ -14,12 +14,12 @@ It replaces the shared CI prelude every Go-based Docker action repo tends to cop
 
 ## Features
 
-- One action, whole Go/Docker prelude: `setup-go` → unit tests (with optional coverage threshold) → start local `registry:2` → `setup-buildx` → `docker/build-push-action` → push to `localhost:<port>/actions/<name>:latest`
-- Defaults match the standard Go Docker action layout (`go.mod`, `./...` tests with coverage, single-arch `Dockerfile` build, registry on port `5001`) — zero config for most repos
-- Tunable: pinned `go_version`, subdirectory `working_directory`, `cache_dependency_path` passthrough for mono-repos, custom `test_command`, `coverage_threshold`, custom `image_name`, `dockerfile`, `build_context`, `registry_port`, and an escape hatch to disable the built-in registry (`manage_registry: false`)
+- One action, whole Go/Docker prelude: `setup-go` → unit tests (with optional coverage threshold) → start local `registry:2` → `setup-buildx` → `docker/build-push-action` → push to `localhost:<port>/actions/<name>:<tag>`
+- Defaults match the standard Go Docker action layout (`go.mod`, `./...` tests with coverage, single-arch `Dockerfile` build, `:latest` tag, registry on port `5001`) — zero config for most repos
+- Tunable: pinned `go_version`, subdirectory `working_directory`, `cache_dependency_path` passthrough for mono-repos, custom `test_command`, `coverage_threshold`, custom `image_name` / `image_tag` / `build_args` / `dockerfile` / `build_context` / `registry_port`, and an escape hatch to disable the built-in registry (`manage_registry: false`)
 - `services:` is job-scoped and unusable inside a composite — the action runs `registry:2` via `docker run -d` and stops it on `if: always()`. Callers who already declare `services: registry` can pass `manage_registry: false` to reuse it.
 - Writes a per-run summary table to `$GITHUB_STEP_SUMMARY`
-- Exposes `image_ref` and `test_exit_code` outputs for downstream smoke steps
+- Exposes `image_ref`, `image_digest`, and `test_exit_code` outputs for downstream pinning and smoke steps
 
 <br/>
 
@@ -156,6 +156,34 @@ Useful when unit tests live in a dedicated job and you only need the "build + pu
 
 <br/>
 
+### Tag the image by commit SHA instead of `:latest`
+
+```yaml
+- uses: actions/checkout@v6
+- uses: somaz94/go-docker-action-ci-action@v1
+  with:
+    image_tag: sha-${{ github.sha }}
+```
+
+The resulting `image_ref` is `localhost:5001/actions/<repo>:sha-<SHA>`. Downstream jobs pin pulls to that ref (or to the `image_digest` output for true immutability).
+
+<br/>
+
+### Pass build arguments through to `docker/build-push-action`
+
+```yaml
+- uses: actions/checkout@v6
+- uses: somaz94/go-docker-action-ci-action@v1
+  with:
+    build_args: |
+      GIT_SHA=${{ github.sha }}
+      BUILD_VERSION=${{ github.ref_name }}
+```
+
+Each `KEY=VALUE` line is forwarded verbatim as a `--build-arg` to the Dockerfile. The action does not interpret values beyond passthrough.
+
+<br/>
+
 ### Caller manages the registry via `services:`
 
 ```yaml
@@ -184,14 +212,19 @@ jobs:
 - id: ci
   uses: somaz94/go-docker-action-ci-action@v1
 
-- name: Report
+- name: Report and pull pinned by digest (requires manage_registry=false + services.registry)
   if: always()
   run: |
     echo "image_ref=${{ steps.ci.outputs.image_ref }}"
+    echo "image_digest=${{ steps.ci.outputs.image_digest }}"
     echo "test_exit_code=${{ steps.ci.outputs.test_exit_code }}"
 ```
 
-`image_ref` is always set (e.g., `localhost:5001/actions/my-action:latest`). `test_exit_code` is `0` when tests passed, and empty when `run_unit_tests: false`.
+- `image_ref` is always set (e.g., `localhost:5001/actions/my-action:latest`).
+- `image_digest` is the immutable `sha256:...` produced by `docker/build-push-action` — use for pinned downstream pulls (`localhost:<port>/actions/<name>@<digest>`).
+- `test_exit_code` is `0` when tests passed, and empty when `run_unit_tests: false`.
+
+> When `manage_registry: true` (default), the action stops the in-job registry right after the build — downstream pulls must happen via a follow-up job that declares `services: registry` **and** the action is called with `manage_registry: false`. Otherwise use `image_digest` only as an identifier emitted into the workflow summary.
 
 <br/>
 
@@ -207,10 +240,12 @@ jobs:
 | `run_unit_tests` | When `true` (default), run `test_command` before the Docker build. Set `false` to skip the test phase entirely. | No | `true` |
 | `test_command` | Shell command executed from `working_directory` for unit tests. Must produce `coverage.out` when `coverage_threshold` is non-empty. | No | `go test ./... -v -cover -coverprofile=coverage.out` |
 | `coverage_threshold` | Minimum total coverage percent (e.g., `80`). Leave empty to skip the threshold check. | No | `''` |
-| `image_name` | Image name used in the final tag `localhost:<registry_port>/actions/<image_name>:latest`. Empty derives from the current repository name. | No | `''` |
+| `image_name` | Image name used in the final tag `localhost:<registry_port>/actions/<image_name>:<image_tag>`. Empty derives from the current repository name. | No | `''` |
+| `image_tag` | Tag appended to the pushed image reference (e.g., `latest`, `sha-abc123`, `${{ github.sha }}`). Applied verbatim — must be a valid Docker tag. | No | `latest` |
 | `dockerfile` | Path to the Dockerfile, relative to `build_context`. | No | `Dockerfile` |
 | `build_context` | Build context passed to `docker/build-push-action`. | No | `.` |
-| `registry_port` | Host port exposed by the local `registry:2` container. Final tag is `localhost:<port>/actions/<image_name>:latest`. | No | `5001` |
+| `build_args` | Multi-line list of build-time variables passed through to `docker/build-push-action`'s `build-args` (one `KEY=VALUE` per line). | No | `''` |
+| `registry_port` | Host port exposed by the local `registry:2` container. Final tag is `localhost:<port>/actions/<image_name>:<image_tag>`. | No | `5001` |
 | `manage_registry` | When `true` (default), run a local `registry:2` container from the action and stop it after the build. Set `false` to rely on a caller-managed `services: registry` on the same port. | No | `true` |
 
 <br/>
@@ -220,6 +255,7 @@ jobs:
 | Output | Description |
 |--------|-------------|
 | `image_ref` | Full image reference that was built and pushed (e.g., `localhost:5001/actions/my-action:latest`). |
+| `image_digest` | Image digest (`sha256:...`) emitted by `docker/build-push-action`. Use for pinned downstream pulls (`<host>/<repo>@<digest>`). |
 | `test_exit_code` | Exit code of the unit test command. `0` when tests passed. Empty when `run_unit_tests` is `false`. |
 
 <br/>
@@ -237,16 +273,16 @@ permissions:
 
 ## How It Works
 
-1. **Validate inputs** — `go_version` or `go_version_file` must be set; `working_directory` and `build_context` must exist; `dockerfile` must be a file inside `build_context`; `test_command` must be non-empty when `run_unit_tests: true`; `coverage_threshold` must be numeric when set; `registry_port` must be a positive integer.
+1. **Validate inputs** — `go_version` or `go_version_file` must be set; `working_directory` and `build_context` must exist; `dockerfile` must be a file inside `build_context`; `test_command` must be non-empty when `run_unit_tests: true`; `coverage_threshold` must be numeric when set; `registry_port` must be a positive integer; `image_tag` must be a valid Docker tag.
 2. **`actions/setup-go`** — either from `go_version_file` (default `go.mod`) or `go_version` (when explicitly set). Go module/build cache controlled by `cache`; `cache_dependency_path` is passed through verbatim.
-3. **Resolve image metadata** — derives the final `image_ref` as `localhost:<registry_port>/actions/<image_name>:latest`. When `image_name` is empty, uses `${{ github.repository }}`'s name component (e.g., `my-action` for `somaz94/my-action`). Emits both `image_name` and `image_ref` as step outputs (`image_ref` is the action's output).
+3. **Resolve image metadata** — derives the final `image_ref` as `localhost:<registry_port>/actions/<image_name>:<image_tag>`. When `image_name` is empty, uses `${{ github.repository }}`'s name component (e.g., `my-action` for `somaz94/my-action`). Emits both `image_name` and `image_ref` as step outputs (`image_ref` is the action's output).
 4. **Run unit tests** (when `run_unit_tests: true`) — `bash -c "$test_command"` from `working_directory`. When `coverage_threshold` is set, parses `coverage.out` via `go tool cover -func` and fails the action if total coverage is below the threshold. Emits `test_exit_code=0` on success.
 5. **Start local registry** (when `manage_registry: true`) — reuses an existing `go-docker-ci-action-registry` container if running; otherwise `docker run -d --rm -p <port>:5000 --name go-docker-ci-action-registry registry:2`. Polls `http://localhost:<port>/v2/` for up to 15 seconds until ready.
 6. **`docker/setup-buildx-action@v4`** — installs buildx with `driver-opts: network=host` so the in-job registry is reachable via `localhost`.
 7. **Configure Git safe directory** — `git config --global --add safe.directory "$GITHUB_WORKSPACE"`, matching the pattern inline Go action CI workflows already use.
-8. **`docker/build-push-action@v7`** — `context: build_context`, `file: build_context/dockerfile`, `push: true`, `tags: <image_ref>`. The local registry receives the push.
-9. **Stop local registry** (`if: always()` when `manage_registry: true`) — `docker stop` removes the `registry:2` container (started with `--rm`). Always runs so the container doesn't leak even on test failure.
-10. **Summary** — a markdown table (working directory / unit tests / coverage threshold / dockerfile / registry / image ref) is appended to `$GITHUB_STEP_SUMMARY`.
+8. **`docker/build-push-action@v7`** — `context: build_context`, `file: build_context/dockerfile`, `push: true`, `tags: <image_ref>`, `build-args: <build_args>`. The local registry receives the push. The digest returned by buildx is exposed as the `image_digest` output.
+9. **Stop local registry** (`if: always()` when `manage_registry: true`) — `docker stop` removes the `registry:2` container (started with `--rm`). Always runs so the container doesn't leak even on test failure. When `manage_registry: true`, downstream steps in the same job cannot pull from the registry — it's gone by the time the action returns.
+10. **Summary** — a markdown table (working directory / unit tests / coverage threshold / dockerfile / registry / image ref / image digest when available) is appended to `$GITHUB_STEP_SUMMARY`.
 
 <br/>
 

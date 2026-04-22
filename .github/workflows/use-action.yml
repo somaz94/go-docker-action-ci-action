@@ -1,0 +1,113 @@
+name: Smoke Test (Released Action)
+
+on:
+  workflow_dispatch:
+    inputs:
+      run:
+        description: 'workflow run'
+        required: true
+        default: 'true'
+  workflow_run:
+    workflows: ["Create release"]
+    types:
+      - completed
+
+permissions:
+  contents: read
+
+jobs:
+  smoke-test-defaults:
+    name: Smoke Test (defaults)
+    runs-on: ubuntu-latest
+    if: >
+      github.event_name == 'workflow_dispatch' ||
+      github.event.workflow_run.conclusion == 'success'
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Run released action against fixture (defaults)
+        id: ci
+        uses: somaz94/go-docker-action-ci-action@v1
+        with:
+          working_directory: tests/fixtures/sample_action
+          build_context: tests/fixtures/sample_action
+
+      - name: Verify outputs
+        run: |
+          REPO_NAME="${GITHUB_REPOSITORY##*/}"
+          EXPECTED="localhost:5001/actions/${REPO_NAME}:latest"
+          IMAGE='${{ steps.ci.outputs.image_ref }}'
+          DIGEST='${{ steps.ci.outputs.image_digest }}'
+          EXIT='${{ steps.ci.outputs.test_exit_code }}'
+          echo "image_ref=${IMAGE}"
+          echo "image_digest=${DIGEST}"
+          echo "test_exit_code=${EXIT}"
+          if [[ "${IMAGE}" != "${EXPECTED}" ]]; then
+            echo "::error::expected image_ref='${EXPECTED}', got '${IMAGE}'"
+            exit 1
+          fi
+          if [[ "${EXIT}" != "0" ]]; then
+            echo "::error::expected test_exit_code='0', got '${EXIT}'"
+            exit 1
+          fi
+          if [[ -z "${DIGEST}" || "${DIGEST}" != sha256:* ]]; then
+            echo "::error::expected image_digest to start with 'sha256:', got '${DIGEST}'"
+            exit 1
+          fi
+          echo "[PASS] smoke test — defaults"
+
+  smoke-test-external-registry:
+    name: Smoke Test (manage_registry=false + coverage threshold)
+    runs-on: ubuntu-latest
+    if: >
+      github.event_name == 'workflow_dispatch' ||
+      github.event.workflow_run.conclusion == 'success'
+    services:
+      registry:
+        image: registry:2
+        ports:
+          - 5001:5000
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Run released action with caller-managed registry
+        id: ci
+        uses: somaz94/go-docker-action-ci-action@v1
+        with:
+          working_directory: tests/fixtures/sample_action
+          build_context: tests/fixtures/sample_action
+          manage_registry: 'false'
+          coverage_threshold: '50'
+
+      - name: Verify outputs
+        run: |
+          REPO_NAME="${GITHUB_REPOSITORY##*/}"
+          EXPECTED="localhost:5001/actions/${REPO_NAME}:latest"
+          IMAGE='${{ steps.ci.outputs.image_ref }}'
+          DIGEST='${{ steps.ci.outputs.image_digest }}'
+          EXIT='${{ steps.ci.outputs.test_exit_code }}'
+          echo "image_ref=${IMAGE}"
+          echo "image_digest=${DIGEST}"
+          echo "test_exit_code=${EXIT}"
+          if [[ "${IMAGE}" != "${EXPECTED}" ]]; then
+            echo "::error::expected image_ref='${EXPECTED}', got '${IMAGE}'"
+            exit 1
+          fi
+          if [[ "${EXIT}" != "0" ]]; then
+            echo "::error::expected test_exit_code='0', got '${EXIT}'"
+            exit 1
+          fi
+          if [[ -z "${DIGEST}" || "${DIGEST}" != sha256:* ]]; then
+            echo "::error::expected image_digest to start with 'sha256:', got '${DIGEST}'"
+            exit 1
+          fi
+          echo "[PASS] smoke test — external registry"
+
+      - name: Pull pushed image from caller services.registry
+        run: |
+          set -euo pipefail
+          REPO_NAME="${GITHUB_REPOSITORY##*/}"
+          DIGEST='${{ steps.ci.outputs.image_digest }}'
+          docker pull "localhost:5001/actions/${REPO_NAME}:latest"
+          docker pull "localhost:5001/actions/${REPO_NAME}@${DIGEST}"
+          docker image inspect "localhost:5001/actions/${REPO_NAME}@${DIGEST}" --format '{{.Id}}'
