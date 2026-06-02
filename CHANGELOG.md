@@ -2,11 +2,23 @@
 
 All notable changes to this project will be documented in this file.
 
-## Unreleased (2026-04-22)
+## [v1.0.2](https://github.com/somaz94/go-docker-action-ci-action/compare/v1.0.1...v1.0.2) (2026-06-02)
+
+### Code Refactoring
+
+- harden action.yml input validation and inline shell ([0175af8](https://github.com/somaz94/go-docker-action-ci-action/commit/0175af8a93ac442434ca8ca4b657ca6bfc3ff273))
+
+### Continuous Integration
+
+- add concurrency guards to recurring workflows ([947ebd6](https://github.com/somaz94/go-docker-action-ci-action/commit/947ebd6eb6edf5768082780ff86c24c60fff782a))
 
 ### Chores
 
 - **deps:** bump alpine (#1) ([#1](https://github.com/somaz94/go-docker-action-ci-action/pull/1)) ([f0df729](https://github.com/somaz94/go-docker-action-ci-action/commit/f0df729edbfb6ddb7804d87472cfd59140ddc4b3))
+
+### Contributors
+
+- somaz
 
 <br/>
 
