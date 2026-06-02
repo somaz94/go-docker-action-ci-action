@@ -93,6 +93,7 @@ runs:
         COVERAGE_THRESHOLD: ${{ inputs.coverage_threshold }}
         DOCKERFILE: ${{ inputs.dockerfile }}
         BUILD_CONTEXT: ${{ inputs.build_context }}
+        IMAGE_NAME: ${{ inputs.image_name }}
         IMAGE_TAG: ${{ inputs.image_tag }}
         REGISTRY_PORT: ${{ inputs.registry_port }}
         MANAGE_REGISTRY: ${{ inputs.manage_registry }}
@@ -148,6 +149,19 @@ runs:
           echo "::error::'image_tag' is not a valid Docker tag (alphanumeric, '_', '.', '-', up to 128 chars; must not start with '.' or '-'), got '$IMAGE_TAG'"
           exit 1
         fi
+
+        if [[ -n "${IMAGE_NAME// }" ]] && ! [[ "$IMAGE_NAME" =~ ^[a-z0-9]+([._/-][a-z0-9]+)*$ ]]; then
+          echo "::error::'image_name' is not a valid image path component (lowercase alphanumeric separated by '.', '_', '-', '/'), got '$IMAGE_NAME'"
+          exit 1
+        fi
+
+        for pair in "run_unit_tests:$RUN_UNIT_TESTS" "manage_registry:$MANAGE_REGISTRY"; do
+          name="${pair%%:*}"
+          val="${pair#*:}"
+          if [[ "$val" != "true" && "$val" != "false" ]]; then
+            echo "::warning::'$name' should be 'true' or 'false', got '$val' — treated as false"
+          fi
+        done
 
         if [[ -n "${GO_VERSION// }" ]]; then
           echo "go_version=$GO_VERSION (explicit)"
@@ -210,7 +224,7 @@ runs:
       run: |
         set -euo pipefail
         echo "::group::Unit tests: $TEST_COMMAND"
-        bash -c "$TEST_COMMAND"
+        bash -ceuo pipefail "$TEST_COMMAND"
         echo "test_exit_code=0" >> "$GITHUB_OUTPUT"
         echo "::endgroup::"
 
@@ -247,7 +261,12 @@ runs:
         echo "::group::Start local registry (registry:2 on :$REGISTRY_PORT)"
         NAME="go-docker-ci-action-registry"
         if docker ps --filter "name=^${NAME}$" --format '{{.Names}}' | grep -qx "$NAME"; then
-          echo "::notice::registry '$NAME' already running — reusing"
+          RUNNING_PORT=$(docker port "$NAME" 5000/tcp 2>/dev/null | head -1 | sed 's/.*://')
+          if [[ "$RUNNING_PORT" != "$REGISTRY_PORT" ]]; then
+            echo "::error::registry '$NAME' already running on port '$RUNNING_PORT', not requested '$REGISTRY_PORT'"
+            exit 1
+          fi
+          echo "::notice::registry '$NAME' already running on :$REGISTRY_PORT — reusing"
         else
           docker run -d --rm -p "${REGISTRY_PORT}:5000" --name "$NAME" registry:2 >/dev/null
         fi
