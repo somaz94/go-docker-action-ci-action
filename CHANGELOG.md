@@ -2,6 +2,23 @@
 
 All notable changes to this project will be documented in this file.
 
+## Unreleased (2026-06-25)
+
+### Continuous Integration
+
+- add DCO check via shared reusable workflow ([900c88d](https://github.com/somaz94/go-docker-action-ci-action/commit/900c88dc3d1d248d03d84d37cf270419478f2699))
+
+### Chores
+
+- **deps:** bump actions/checkout from 6 to 7 (#3) ([#3](https://github.com/somaz94/go-docker-action-ci-action/pull/3)) ([f24fe82](https://github.com/somaz94/go-docker-action-ci-action/commit/f24fe82f2e59430269e790845bb0e1dc0d30f5a2))
+- **deps:** bump alpine (#2) ([#2](https://github.com/somaz94/go-docker-action-ci-action/pull/2)) ([28071ae](https://github.com/somaz94/go-docker-action-ci-action/commit/28071aeadb672d84e15a6c2e0954010eda060857))
+
+### Contributors
+
+- somaz
+
+<br/>
+
 ## [v1.0.2](https://github.com/somaz94/go-docker-action-ci-action/compare/v1.0.1...v1.0.2) (2026-06-02)
 
 ### Code Refactoring
