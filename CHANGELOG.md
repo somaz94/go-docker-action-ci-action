@@ -2,14 +2,23 @@
 
 All notable changes to this project will be documented in this file.
 
-## Unreleased (2026-06-25)
+## Unreleased (2026-07-23)
 
 ### Continuous Integration
 
+- remove DCO workflow ([9ef2052](https://github.com/somaz94/go-docker-action-ci-action/commit/9ef2052bbb61c353cca3b58574438eb43e48078e))
+- adopt semantic-pr, labels, lock-threads, PR size, and auto-assign reusables ([d1d4612](https://github.com/somaz94/go-docker-action-ci-action/commit/d1d46123f74a42b4031f7acf5b2763ff23bab4b7))
+- use reusable stale-issues workflow ([1ee2e94](https://github.com/somaz94/go-docker-action-ci-action/commit/1ee2e947fa620c18a8a51f4cbf8d78897063f715))
+- use reusable issue-greeting workflow ([b3915bf](https://github.com/somaz94/go-docker-action-ci-action/commit/b3915bffd7a66a136b6463888ab47ec13eb0e6cb))
+- use reusable dependabot-auto-merge workflow ([72cb24a](https://github.com/somaz94/go-docker-action-ci-action/commit/72cb24a44c26a7754744573029e48c9b56205c74))
+- use reusable contributors workflow ([0c08fe5](https://github.com/somaz94/go-docker-action-ci-action/commit/0c08fe5667af3b7ed320c381e994c95683ff61c2))
+- add ok-to-test workflow stub ([f0bb44f](https://github.com/somaz94/go-docker-action-ci-action/commit/f0bb44f19ab9a9bf5265ee324c4a7e7a66a19650))
+- add PR welcome workflow stub ([36c59e7](https://github.com/somaz94/go-docker-action-ci-action/commit/36c59e7eb8aea0c801ee1bf03e81743ba6961344))
 - add DCO check via shared reusable workflow ([900c88d](https://github.com/somaz94/go-docker-action-ci-action/commit/900c88dc3d1d248d03d84d37cf270419478f2699))
 
 ### Chores
 
+- **deps:** bump actions/setup-go from 6 to 7 ([269c023](https://github.com/somaz94/go-docker-action-ci-action/commit/269c0236147b463b2201c2b1acf0b7f912e16aec))
 - **deps:** bump actions/checkout from 6 to 7 (#3) ([#3](https://github.com/somaz94/go-docker-action-ci-action/pull/3)) ([f24fe82](https://github.com/somaz94/go-docker-action-ci-action/commit/f24fe82f2e59430269e790845bb0e1dc0d30f5a2))
 - **deps:** bump alpine (#2) ([#2](https://github.com/somaz94/go-docker-action-ci-action/pull/2)) ([28071ae](https://github.com/somaz94/go-docker-action-ci-action/commit/28071aeadb672d84e15a6c2e0954010eda060857))
 
