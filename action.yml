@@ -182,7 +182,7 @@ runs:
 
     - name: Set up Go (from file)
       if: inputs.go_version == ''
-      uses: actions/setup-go@v6
+      uses: actions/setup-go@v7
       with:
         go-version-file: ${{ inputs.working_directory == '.' && inputs.go_version_file || format('{0}/{1}', inputs.working_directory, inputs.go_version_file) }}
         cache: ${{ inputs.cache }}
@@ -190,7 +190,7 @@ runs:
 
     - name: Set up Go (explicit)
       if: inputs.go_version != ''
-      uses: actions/setup-go@v6
+      uses: actions/setup-go@v7
       with:
         go-version: ${{ inputs.go_version }}
         cache: ${{ inputs.cache }}
