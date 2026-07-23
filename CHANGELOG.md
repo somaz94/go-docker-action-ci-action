@@ -18,6 +18,7 @@ All notable changes to this project will be documented in this file.
 
 ### Chores
 
+- **deps:** bump actions/setup-python from 6 to 7 ([b6866c9](https://github.com/somaz94/go-docker-action-ci-action/commit/b6866c92bff98905c669777ab2c935fa91bbaf53))
 - **deps:** bump actions/setup-go from 6 to 7 ([269c023](https://github.com/somaz94/go-docker-action-ci-action/commit/269c0236147b463b2201c2b1acf0b7f912e16aec))
 - **deps:** bump actions/checkout from 6 to 7 (#3) ([#3](https://github.com/somaz94/go-docker-action-ci-action/pull/3)) ([f24fe82](https://github.com/somaz94/go-docker-action-ci-action/commit/f24fe82f2e59430269e790845bb0e1dc0d30f5a2))
 - **deps:** bump alpine (#2) ([#2](https://github.com/somaz94/go-docker-action-ci-action/pull/2)) ([28071ae](https://github.com/somaz94/go-docker-action-ci-action/commit/28071aeadb672d84e15a6c2e0954010eda060857))
