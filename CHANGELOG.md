@@ -2,10 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
-## Unreleased (2026-07-23)
+## [v1.0.3](https://github.com/somaz94/go-docker-action-ci-action/compare/v1.0.2...v1.0.3) (2026-09-29)
+
+### Bug Fixes
+
+- drop the buildx install input removed in v4 ([5579823](https://github.com/somaz94/go-docker-action-ci-action/commit/5579823674465d33e9c05d3e130cf0aa77e08111))
 
 ### Continuous Integration
 
+- retry mirror pushes on transient remote failures ([97ef2b2](https://github.com/somaz94/go-docker-action-ci-action/commit/97ef2b2247eacd23a1cd6f1d90039a7fa5b16850))
+- drop the dead issue-close trigger from changelog generation ([c6e4266](https://github.com/somaz94/go-docker-action-ci-action/commit/c6e4266a739b6a9c28ade568bbe754ca8531e387))
 - remove DCO workflow ([9ef2052](https://github.com/somaz94/go-docker-action-ci-action/commit/9ef2052bbb61c353cca3b58574438eb43e48078e))
 - adopt semantic-pr, labels, lock-threads, PR size, and auto-assign reusables ([d1d4612](https://github.com/somaz94/go-docker-action-ci-action/commit/d1d46123f74a42b4031f7acf5b2763ff23bab4b7))
 - use reusable stale-issues workflow ([1ee2e94](https://github.com/somaz94/go-docker-action-ci-action/commit/1ee2e947fa620c18a8a51f4cbf8d78897063f715))
@@ -18,6 +24,9 @@ All notable changes to this project will be documented in this file.
 
 ### Chores
 
+- drop Node.js boilerplate from .gitignore ([3abc487](https://github.com/somaz94/go-docker-action-ci-action/commit/3abc487a694ca2de6b4405be2f6d0baba8ec5115))
+- trim redundant comments in CODEOWNERS and gitlab-mirror workflow ([c1614a9](https://github.com/somaz94/go-docker-action-ci-action/commit/c1614a995c09ec48b46dd9fb825b31bacbc782f1))
+- **deps:** bump golang (#6) ([#6](https://github.com/somaz94/go-docker-action-ci-action/pull/6)) ([81a8e92](https://github.com/somaz94/go-docker-action-ci-action/commit/81a8e9219b127aedffda1a7a00bf48800f640925))
 - **deps:** bump actions/setup-python from 6 to 7 ([b6866c9](https://github.com/somaz94/go-docker-action-ci-action/commit/b6866c92bff98905c669777ab2c935fa91bbaf53))
 - **deps:** bump actions/setup-go from 6 to 7 ([269c023](https://github.com/somaz94/go-docker-action-ci-action/commit/269c0236147b463b2201c2b1acf0b7f912e16aec))
 - **deps:** bump actions/checkout from 6 to 7 (#3) ([#3](https://github.com/somaz94/go-docker-action-ci-action/pull/3)) ([f24fe82](https://github.com/somaz94/go-docker-action-ci-action/commit/f24fe82f2e59430269e790845bb0e1dc0d30f5a2))
